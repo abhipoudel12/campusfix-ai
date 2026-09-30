@@ -22,3 +22,17 @@
 | Date | Milestone | Result |
 | --- | --- | --- |
 | 2026-09-24 | Initial local Git repository | Pending verification |
+
+## 2026-09-30 — Milestone 1: local frontend demo
+
+- Built a responsive, accessible Vite/vanilla JavaScript frontend with CampusFix AI branding, photo validation and preview, location and notes, and explicit sample scenario selection.
+- Added sample report generation, an in-memory dashboard, counts, status changes, score sorting, and status filtering.
+- Demo scoring rule: Low/Medium/High = 25/50/70, hazard +15, recurring issue +5, capped at 100. This is a triage aid, not a validated safety assessment.
+- The uploaded photo is not analyzed or stored; example report facts come from the selected scenario. Reports clear on refresh. No AWS calls, resources, or deployment were made for this milestone.
+- Checks: `npm test` passed (3 tests); `npm run build` passed; local Vite server returned HTTP 200. Browser automation was unavailable in this session, so responsive layout and interaction need manual browser verification.
+- Next milestone: real backend and Bedrock integration, with AWS cost/Free Plan checks before any AWS action that could consume credits or incur charges.
+
+| Date | Milestone | Result |
+| --- | --- | --- |
+| 2026-09-30 | Frontend tests, build, server smoke check | Passed: 3 tests, Vite build, HTTP 200 |
+| 2026-09-30 | Browser interaction and responsive review | Not run: browser automation surface unavailable |
