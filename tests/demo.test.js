@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { calculateScore, createDemoReport, scenarios, selectReports, updateReportStatus } from '../src/demo.js';
+import { calculateScore, scoreBreakdown, createDemoReport, scenarios, selectReports, updateReportStatus } from '../src/demo.js';
 
 test('scores use documented severity and hazard rules', () => {
   assert.equal(calculateScore(scenarios.lighting), 85);
@@ -28,4 +28,12 @@ test('status updates and score sorting/filtering operate on in-memory reports', 
   assert.deepEqual(selectReports(changed, { sort: 'lowest' }).map((item) => item.id), ['low', 'high']);
   assert.deepEqual(selectReports(changed, { status: 'Resolved' }).map((item) => item.id), ['high']);
   assert.throws(() => updateReportStatus(changed, 'low', 'Unknown'));
+});
+
+test('score breakdown exposes the same factors and total as the score', () => {
+  assert.deepEqual(scoreBreakdown(scenarios.lighting), { severity: 70, hazard: 15, recurring: 0, total: 85 });
+  assert.deepEqual(scoreBreakdown(scenarios.trash), { severity: 25, hazard: 0, recurring: 5, total: 30 });
+  for (const scenario of Object.values(scenarios)) {
+    assert.equal(scoreBreakdown(scenario).total, calculateScore(scenario));
+  }
 });

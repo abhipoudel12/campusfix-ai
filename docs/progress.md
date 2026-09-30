@@ -36,3 +36,11 @@
 | --- | --- | --- |
 | 2026-09-30 | Frontend tests, build, server smoke check | Passed: 3 tests, Vite build, HTTP 200 |
 | 2026-09-30 | Browser interaction and responsive review | Not run: browser automation surface unavailable |
+
+## 2026-09-30 — Frontend theme and interaction refinement
+
+- Redesigned the local frontend with a compact navigation, near-black surfaces, cyan/violet gradients, ambient glow, fine panel borders, and responsive report composer and dashboard. Navigation links only to implemented page sections.
+- Replaced decorative star branding with an original inline SVG campus building and check mark. The header mark has a one-second cyan/violet shadow glow; the mark itself stays steady, and the glow stops with reduced-motion settings.
+- Added restrained section entrances, upload and preview feedback, a short **Preparing demo report** state that blocks duplicate submissions, animated score values and meters, an expandable score breakdown, status badges and confirmation, and filter/sort feedback. The breakdown uses the same severity, hazard, and recurring points as the scoring function.
+- Demo limits remain visible: uploaded photos are previewed locally but are not analyzed or uploaded; report facts come from a selected sample scenario; reports live only in memory and are not sent to a facilities team. The score is a demo triage aid, not a validated safety assessment. No AWS services were used or deployed.
+- Checks performed: `npm test` passed (4 tests); `npm run build` passed; `node --check src/main.js` passed; `git diff --check` passed. Browser automation was unavailable, so desktop/mobile visual verification remains manual.

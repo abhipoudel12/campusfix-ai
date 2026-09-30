@@ -43,12 +43,21 @@ export const scenarios = Object.freeze({
 });
 
 const severityPoints = { Low: 25, Medium: 50, High: 70 };
+const hazardPoints = 15;
+const recurringPoints = 5;
 
 // Triage aid only: severity base + 15 for a hazard + 5 for a recurring issue, capped at 100.
 // This is a demo heuristic, not a validated safety assessment.
 export function calculateScore(scenario) {
+  return scoreBreakdown(scenario).total;
+}
+
+export function scoreBreakdown(scenario) {
   if (!(scenario.severity in severityPoints)) throw new Error('Unknown severity');
-  return Math.min(100, severityPoints[scenario.severity] + (scenario.hazard ? 15 : 0) + (scenario.recurring ? 5 : 0));
+  const severity = severityPoints[scenario.severity];
+  const hazard = scenario.hazard ? hazardPoints : 0;
+  const recurring = scenario.recurring ? recurringPoints : 0;
+  return { severity, hazard, recurring, total: Math.min(100, severity + hazard + recurring) };
 }
 
 export function createDemoReport({ scenarioKey, location, notes = '', id = crypto.randomUUID(), createdAt = new Date().toISOString() }) {
