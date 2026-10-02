@@ -1,6 +1,6 @@
 # CampusFix AI development progress
 
-This log records the main implementation decisions and what was verified. The [README](../README.md) explains the live app; the [backend guide](milestone-2-backend.md) and [hosting record](amplify-hosting-plan.md) hold operational detail.
+This log records the main implementation decisions and what was verified. The [README](../README.md) explains the live app; the [backend guide](backend.md) and [hosting record](amplify-hosting-plan.md) hold operational detail.
 
 ## MVP definition and frontend development
 
@@ -24,7 +24,7 @@ The coding agent implemented the CloudFormation templates and Node.js Lambda han
 
 Two early backend stack attempts rolled back. One table creation failed with a KMS validation error; omitting the explicit managed-key selection let DynamoDB use its default AWS owned encryption. A later Lambda configuration failed because reserving concurrency would violate this account's unreserved minimum; removing the reserved-concurrency setting allowed deployment. The precise cause of the earlier KMS key absence was not established.
 
-Four controlled photo submissions then returned HTTP 502 without a saved report. Sanitized diagnostics narrowed one failure to JSON parsing and a later failure to schema values, while deliberately excluding photo bytes, notes, and model response text. The coding agent tightened the seven-field prompt, accepted only harmless whitespace and enum-case differences, retained strict missing/extra/type/value checks, and added fixed field-specific reason codes with focused mocked tests. The exact contents of the failed model responses were not logged, so their full causes remain unknown. The [backend guide](milestone-2-backend.md) retains the engineering details of the resolved deployment problems.
+Four controlled photo submissions then returned HTTP 502 without a saved report. Sanitized diagnostics narrowed one failure to JSON parsing and a later failure to schema values, while deliberately excluding photo bytes, notes, and model response text. The coding agent tightened the seven-field prompt, accepted only harmless whitespace and enum-case differences, retained strict missing/extra/type/value checks, and added fixed field-specific reason codes with focused mocked tests. The exact contents of the failed model responses were not logged, so their full causes remain unknown. The [backend guide](backend.md) describes the deployed configuration and operations.
 
 **Verified:** Focused mocked parser, validator, scoring, failure, and redaction tests. The repairs did not create fallback analysis or change the selected model.
 

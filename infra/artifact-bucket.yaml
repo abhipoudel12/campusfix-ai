@@ -5,7 +5,7 @@ Metadata:
     AWSAgentToolkit: aws-cloudformation@3
   com.aws.cloudformation.Context:
     ref:
-      - at: docs/milestone-2-backend.md
+      - at: docs/backend.md
         has: deployment and cleanup order
         scope: stack
 Resources:

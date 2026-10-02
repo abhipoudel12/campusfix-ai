@@ -71,6 +71,6 @@ The live API has no user authentication. Reports are public, and **facilities te
 ## Supporting documentation
 
 - [Development milestones and verified evidence](docs/progress.md)
-- [Backend architecture, configuration, deployment, and cleanup](docs/milestone-2-backend.md)
+- [Backend architecture, configuration, deployment, and cleanup](docs/backend.md)
 - [Amplify deployment record and hosting procedure](docs/amplify-hosting-plan.md)
 - [Mobile screenshot](docs/screenshots/campusfix-mobile.png) and AWS MCP evidence: [connection](docs/screenshots/aws-mcp-connected.png), [read-only identity check](docs/screenshots/aws-mcp-identity-check.png)

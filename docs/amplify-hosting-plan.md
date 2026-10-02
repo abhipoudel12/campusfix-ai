@@ -1,6 +1,6 @@
 # Amplify Hosting deployment and updates
 
-This document records the live static frontend and explains how to reproduce a reviewed frontend or CORS update. Backend implementation, model limits, and destructive cleanup are in the [backend guide](milestone-2-backend.md). Commands below are documentation only and were not run during this repository review.
+This document records the live static frontend and explains how to reproduce a reviewed frontend or CORS update. Backend implementation, model limits, and destructive cleanup are in the [backend guide](backend.md). Commands below are documentation only and were not run during this repository review.
 
 ## Current deployment
 
