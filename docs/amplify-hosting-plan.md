@@ -1,4 +1,4 @@
-# Amplify Hosting deployment — 2026-10-02
+# Amplify Hosting deployment 
 
 ## Live address and scope
 
