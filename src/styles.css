@@ -195,6 +195,8 @@ textarea{resize:vertical;min-height:86px}
 .reports.list-refresh>*{animation:content-enter 220ms var(--ease) backwards}
 footer{display:flex;justify-content:space-between;align-items:center;gap:15px;min-height:84px;padding:18px clamp(20px,5.2vw,80px);border-top:1px solid var(--line);color:#a5b4c6;font-size:11px}
 .footer-brand{display:inline-flex;align-items:center;gap:7px;color:#e8effa;font-size:13px;font-weight:800}
+.report-actions{display:flex;flex-wrap:wrap;gap:14px;margin-top:18px}
+.report-actions button:disabled{opacity:.6;cursor:wait}
 .footer-mark{display:block;width:24px;height:24px;color:var(--cyan)}
 .motion-ready [data-reveal]{opacity:0;transform:translateY(12px);transition:opacity 430ms var(--ease),transform 430ms var(--ease)}
 .motion-ready [data-reveal].is-visible{opacity:1;transform:translateY(0)}

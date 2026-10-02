@@ -1,6 +1,6 @@
 # CampusFix AI
 
-CampusFix AI is a campus maintenance reporting prototype. This milestone is a **local frontend demo**: add a photo and location, select a predefined issue scenario, and explore a sample report in an in-memory dashboard.
+CampusFix AI is a campus maintenance reporting prototype. It supports a **local frontend demo** and a **connected demo** backed by the deployed AWS API.
 
 ## Run locally
 
@@ -27,9 +27,9 @@ Open **http://localhost:5173/**. Run `npm test` for the focused logic tests and 
 
 The Campus Attention Score is a simple triage aid, **not a validated safety assessment**. It starts at 25 for Low severity, 50 for Medium, or 70 for High; adds 15 for a hazard and 5 for a recurring issue; and caps at 100. These characteristics are predefined per sample scenario. The score does not use the image or user notes.
 
-## Planned later
+## Connected demo and hosting
 
-The next milestone is a real API and Bedrock image analysis, followed by persistence and deployment. The planned architecture is Amplify Hosting for the frontend, API Gateway and Lambda for application endpoints, DynamoDB for reports, and one structured Bedrock image-analysis inference per submission. Image storage will be added only if it proves necessary. None of these AWS services are integrated or deployed in this milestone.
+Set `VITE_API_URL=https://mkebx3gwm5.execute-api.us-east-1.amazonaws.com` when building to use the deployed API. Connected mode sends photos for AI analysis, saves report text, loads and paginates reports, and disables anonymous status editing. The API is deployed but **live AI report creation remains blocked**: four controlled photo attempts have returned HTTP 502, and no report has been saved. The API is public; use only nonprivate demo data. The frontend is not hosted yet. See [docs/amplify-hosting-plan.md](docs/amplify-hosting-plan.md) for the prepared build, hosting cost, and required CORS update.
 
 See [docs/progress.md](docs/progress.md) for milestone evidence and remaining work. Existing AWS connection screenshots are in `docs/screenshots/`.
 

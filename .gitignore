@@ -6,3 +6,6 @@ dist/
 .aws/
 *.zip
 .DS_Store
+test-assets/
+__pycache__/
+*.pyc

@@ -1,14 +1,19 @@
 import './styles.css';
 import { calculateScore, scoreBreakdown, createDemoReport, scenarios, statuses, updateReportStatus, selectReports } from './demo.js';
+import { apiBase, listReports, submitReport } from './api.js';
+import { mergeReportPage } from './report-pages.js';
 
-const MAX_FILE_SIZE = 8 * 1024 * 1024;
+const realMode = Boolean(apiBase);
+const MAX_FILE_SIZE = (realMode ? 3 : 8) * 1024 * 1024;
 const allowedTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
 let reports = [];
+let nextCursor = null;
 let selectedFile = null;
 let previewUrl = null;
 let filter = 'All';
 let sort = 'highest';
 let isPreparing = false;
+let isLoadingReports = false;
 let dragDepth = 0;
 let lastStatusChangeId = null;
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -43,12 +48,34 @@ app.innerHTML = `
     </main><footer><span class="footer-brand"><span class="footer-mark">${brandMark}</span>CampusFix AI</span><span>Local demo · Campus care starts with a clear report</span></footer>
   </div>`;
 
+if (realMode) {
+  document.querySelector('.hero .eyebrow').lastChild.textContent = ' CAMPUS CARE / CONNECTED DEMO';
+  document.querySelector('.hero-description').textContent = 'Add a photo and location to generate a suggested maintenance report. The photo is sent to the configured backend for one AI analysis and is not stored.';
+  document.querySelector('.hero-note').lastChild.textContent = ' Reports are saved in the demo backend';
+  document.querySelector('.art-card-top span:last-child').textContent = 'HOW THIS WORKS';
+  document.querySelectorAll('.art-process div span')[1].textContent = 'Analyze photo once';
+  document.querySelectorAll('.art-process div span')[2].textContent = 'Review the suggested report';
+  document.querySelector('.art-card-bottom').innerHTML = '<span>AI PHOTO ANALYSIS</span><span>NO PHOTO STORAGE</span>';
+  document.querySelector('.workspace .section-intro > p').textContent = 'Your photo is sent for one analysis and then discarded. Reports are public demo data; avoid private details. No facilities team is notified.';
+  document.querySelector('#photo-help').textContent = 'JPEG, PNG, or WebP · up to 3 MB. Sent for one analysis; photo is not stored.';
+  document.querySelector('.scenario-box').hidden = true;
+  document.querySelector('.submit-label').textContent = 'Analyze photo';
+  document.querySelectorAll('.side-panel .process-item p')[1].textContent = 'AI suggests report details from the photo and context.';
+  document.querySelectorAll('.side-panel .process-item p')[2].textContent = 'Review suggested facts and score.';
+  document.querySelector('.dashboard-intro > p').textContent = 'Suggested reports are saved in the public demo backend. Anyone with its API URL can read reports; status editing is disabled.';
+  document.querySelector('footer > span:last-child').textContent = 'Connected demo · Campus care starts with a clear report';
+}
+
 const form = document.querySelector('#report-form');
 const fileInput = document.querySelector('#photo');
 const uploadArea = document.querySelector('#upload-area');
 const locationInput = document.querySelector('#location');
 const scenarioSelect = document.querySelector('#scenario');
 const reportsEl = document.querySelector('#reports');
+reportsEl.insertAdjacentHTML('afterend', '<div class="report-actions"><button class="text-button" id="refresh-reports" type="button" hidden>Refresh saved reports</button><button class="text-button" id="load-more" type="button" hidden>Load more reports</button></div>');
+const loadMoreButton = document.querySelector('#load-more');
+const refreshButton = document.querySelector('#refresh-reports');
+refreshButton.hidden = !realMode;
 const submitButton = form.querySelector('.submit-button');
 const dashboardFeedback = document.querySelector('#dashboard-feedback');
 const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
@@ -83,7 +110,7 @@ function acceptFile(file) {
   if (!file) return;
   const photoFeedback = document.querySelector('#photo-feedback');
   if (!allowedTypes.has(file.type)) { clearPreview(); photoFeedback.textContent = ''; setError('photo', 'Choose a JPEG, PNG, or WebP image.'); return; }
-  if (file.size > MAX_FILE_SIZE) { clearPreview(); photoFeedback.textContent = ''; setError('photo', 'This photo is too large. Choose an image under 8 MB.'); return; }
+  if (file.size > MAX_FILE_SIZE) { clearPreview(); photoFeedback.textContent = ''; setError('photo', `This photo is too large. Choose an image under ${realMode ? 3 : 8} MB.`); return; }
   if (file.size === 0) { clearPreview(); photoFeedback.textContent = ''; setError('photo', 'This file is empty. Choose another photo.'); return; }
   clearPreview();
   selectedFile = file;
@@ -95,7 +122,7 @@ function acceptFile(file) {
   document.querySelector('#preview-wrap').hidden = false;
   uploadArea.classList.add('has-image');
   setError('photo', '');
-  photoFeedback.textContent = 'Photo ready for this local preview.';
+  photoFeedback.textContent = realMode ? 'Photo ready for analysis.' : 'Photo ready for this local preview.';
 }
 fileInput.addEventListener('change', () => acceptFile(fileInput.files[0]));
 document.querySelector('#replace-photo').addEventListener('click', () => {
@@ -106,7 +133,7 @@ document.querySelector('#replace-photo').addEventListener('click', () => {
 });
 document.querySelector('#remove-photo').addEventListener('click', () => {
   clearPreview(); setError('photo', '');
-  document.querySelector('#photo-feedback').textContent = 'Photo removed. Choose another to make a sample report.';
+  document.querySelector('#photo-feedback').textContent = realMode ? 'Photo removed. Choose another for analysis.' : 'Photo removed. Choose another to make a sample report.';
   uploadArea.classList.add('responding');
   window.setTimeout(() => uploadArea.classList.remove('responding'), 260);
   fileInput.focus();
@@ -124,36 +151,49 @@ form.addEventListener('submit', async (event) => {
   event.preventDefault();
   if (isPreparing) return;
   let valid = true;
-  if (!selectedFile) { setError('photo', 'Add a photo to create a sample report.'); valid = false; }
+  if (!selectedFile) { setError('photo', realMode ? 'Add a photo to request analysis.' : 'Add a photo to create a sample report.'); valid = false; }
   if (!locationInput.value.trim()) { setError('location', 'Enter a building or location.'); valid = false; }
   if (!valid) { (selectedFile ? locationInput : fileInput).focus(); return; }
-  const report = createDemoReport({ scenarioKey: scenarioSelect.value, location: locationInput.value, notes: document.querySelector('#notes').value });
+  const report = realMode ? null : createDemoReport({ scenarioKey: scenarioSelect.value, location: locationInput.value, notes: document.querySelector('#notes').value });
   isPreparing = true;
   submitButton.disabled = true;
   submitButton.classList.add('is-preparing');
-  submitButton.querySelector('.submit-label').textContent = 'Preparing demo report';
-  document.querySelector('#form-message').textContent = 'Preparing a demo report from the selected scenario. No photo analysis is taking place.';
-  await new Promise((resolve) => window.setTimeout(resolve, reduceMotion.matches ? 0 : 420));
-  reports = [report, ...reports];
-  renderReports({ animateId: report.id });
-  document.querySelector('#form-message').textContent = 'Sample report added to the dashboard. No photo analysis was performed.';
-  dashboardFeedback.textContent = 'Sample demo report added. No photo analysis was performed.';
-  form.reset(); clearPreview(); setError('photo', ''); setError('location', ''); updateScenarioSummary();
-  document.querySelector('#photo-feedback').textContent = '';
-  submitButton.disabled = false;
-  submitButton.classList.remove('is-preparing');
-  submitButton.querySelector('.submit-label').textContent = 'Generate sample report';
-  isPreparing = false;
-  document.querySelector('#dashboard').scrollIntoView({ behavior: reduceMotion.matches ? 'auto' : 'smooth' });
+  submitButton.querySelector('.submit-label').textContent = realMode ? 'Analyzing photo' : 'Preparing demo report';
+  document.querySelector('#form-message').textContent = realMode ? 'Analyzing photo and preparing a suggested report.' : 'Preparing a demo report from the selected scenario. No photo analysis is taking place.';
+  try {
+    if (!realMode) await new Promise((resolve) => window.setTimeout(resolve, reduceMotion.matches ? 0 : 420));
+    const result = realMode ? await submitReport(selectedFile, locationInput.value, document.querySelector('#notes').value) : { report };
+    reports = [result.report, ...reports.filter((item) => item.id !== result.report.id)];
+    renderReports({ animateId: result.report.id });
+    document.querySelector('#form-message').textContent = realMode ? (result.duplicate ? 'Existing report returned; no new analysis was run.' : 'Suggested report saved. Review its details before acting.') : 'Sample report added to the dashboard. No photo analysis was performed.';
+    dashboardFeedback.textContent = realMode ? 'Suggested report added. No facilities team was notified.' : 'Sample demo report added. No photo analysis was performed.';
+    form.reset(); clearPreview(); setError('photo', ''); setError('location', ''); updateScenarioSummary();
+    document.querySelector('#photo-feedback').textContent = '';
+    document.querySelector('#dashboard').scrollIntoView({ behavior: reduceMotion.matches ? 'auto' : 'smooth' });
+  } catch (error) {
+    document.querySelector('#form-message').textContent = error.message;
+  } finally {
+    submitButton.disabled = false;
+    submitButton.classList.remove('is-preparing');
+    submitButton.querySelector('.submit-label').textContent = realMode ? 'Analyze photo' : 'Generate sample report';
+    isPreparing = false;
+  }
 });
 
-document.querySelector('#status-filter').addEventListener('change', (event) => { filter = event.target.value; lastStatusChangeId = null; renderReports({ animateList: true }); dashboardFeedback.textContent = `Showing ${filter === 'All' ? 'all' : filter.toLowerCase()} demo reports.`; });
-document.querySelector('#score-sort').addEventListener('change', (event) => { sort = event.target.value; lastStatusChangeId = null; renderReports({ animateList: true }); dashboardFeedback.textContent = `Demo reports sorted by score, ${sort === 'highest' ? 'highest' : 'lowest'} first.`; });
-reportsEl.addEventListener('change', (event) => {
+document.querySelector('#status-filter').addEventListener('change', (event) => { filter = event.target.value; lastStatusChangeId = null; renderReports({ animateList: true }); dashboardFeedback.textContent = `Showing ${filter === 'All' ? 'all' : filter.toLowerCase()} ${realMode ? '' : 'demo '}reports.`; });
+document.querySelector('#score-sort').addEventListener('change', (event) => { sort = event.target.value; lastStatusChangeId = null; renderReports({ animateList: true }); dashboardFeedback.textContent = `${realMode ? 'Reports' : 'Demo reports'} sorted by score, ${sort === 'highest' ? 'highest' : 'lowest'} first.`; });
+reportsEl.addEventListener('change', async (event) => {
+  if (realMode) return;
   if (!event.target.matches('[data-status-id]')) return;
   const { statusId } = event.target.dataset;
   const status = event.target.value;
-  reports = updateReportStatus(reports, statusId, status);
+  try {
+    reports = updateReportStatus(reports, statusId, status);
+  } catch (error) {
+    dashboardFeedback.textContent = error.message;
+    renderReports();
+    return;
+  }
   lastStatusChangeId = statusId;
   renderReports();
   const updatedControl = [...reportsEl.querySelectorAll('[data-status-id]')].find((control) => control.dataset.statusId === statusId);
@@ -180,22 +220,23 @@ reportsEl.addEventListener('click', (event) => {
   }
 });
 function renderScoreBreakdown(report) {
-  const scenario = scenarios[report.scenarioKey];
+  const scenario = realMode ? report : scenarios[report.scenarioKey];
   const points = scoreBreakdown(scenario);
-  return `<p>Predefined points for the ${escapeHtml(scenario.label)} demo scenario:</p><dl><div><dt>${escapeHtml(scenario.severity)} severity</dt><dd>+${points.severity}</dd></div><div><dt>Hazard ${scenario.hazard ? 'present' : 'absent'}</dt><dd>+${points.hazard}</dd></div><div><dt>Recurring issue ${scenario.recurring ? 'yes' : 'no'}</dt><dd>+${points.recurring}</dd></div><div class="score-total"><dt>Total (capped at 100)</dt><dd>${points.total}</dd></div></dl><p>This is a demo triage aid, not a validated safety assessment. The photo and notes do not affect the score.</p>`;
+  return `<p>${realMode ? 'Deterministic points from suggested AI classifications:' : `Predefined points for the ${escapeHtml(scenario.label)} demo scenario:`}</p><dl><div><dt>${escapeHtml(scenario.severity)} severity</dt><dd>+${points.severity}</dd></div><div><dt>Hazard ${scenario.hazard ? 'present' : 'absent'}</dt><dd>+${points.hazard}</dd></div><div><dt>Recurring issue ${scenario.recurring ? 'yes' : 'no'}</dt><dd>+${points.recurring}</dd></div><div class="score-total"><dt>Total (capped at 100)</dt><dd>${points.total}</dd></div></dl><p>This is a demo triage aid, not a validated safety assessment. ${realMode ? 'AI classifications may be incorrect.' : 'The photo and notes do not affect the score.'}</p>`;
 }
 function renderReports({ animateId = null, animateList = false } = {}) {
   const openIds = new Set([...reportsEl.querySelectorAll('.score-explainer[open]')].map((details) => details.dataset.reportId));
   const counts = Object.fromEntries(statuses.map((status) => [status, reports.filter((report) => report.status === status).length]));
   const statsEl = document.querySelector('#stats');
-  const statsHtml = `<div class="stat"><span>Total reports</span><strong>${reports.length}</strong><small>Submitted this session</small></div><div class="stat"><span>Open</span><strong>${counts.Open}</strong><small>Awaiting attention</small></div><div class="stat"><span>In progress</span><strong>${counts['In progress']}</strong><small>Being addressed</small></div><div class="stat"><span>Resolved</span><strong>${counts.Resolved}</strong><small>Marked complete</small></div>`;
+  const statsHtml = `<div class="stat"><span>${realMode ? 'Loaded' : 'Total'} reports</span><strong>${reports.length}</strong><small>${realMode ? 'Latest saved reports' : 'Submitted this session'}</small></div><div class="stat"><span>Open</span><strong>${counts.Open}</strong><small>Awaiting attention</small></div><div class="stat"><span>In progress</span><strong>${counts['In progress']}</strong><small>Being addressed</small></div><div class="stat"><span>Resolved</span><strong>${counts.Resolved}</strong><small>Marked complete</small></div>`;
   if (statsEl.innerHTML !== statsHtml) statsEl.innerHTML = statsHtml;
-  document.querySelector('#report-total').textContent = `(${reports.length})`;
+  document.querySelector('#report-total').textContent = `(${reports.length}${realMode && nextCursor ? '+' : ''})`;
+  loadMoreButton.hidden = !realMode || !nextCursor;
   const visible = selectReports(reports, { status: filter, sort });
   if (!visible.length) {
-    reportsEl.innerHTML = reports.length ? `<div class="empty-state"><span aria-hidden="true">⌕</span><h4>No reports match this filter.</h4><p>Try another status to see your sample reports.</p></div>` : `<div class="empty-state"><span class="empty-mark">${brandMark}</span><h4>No reports yet.</h4><p>Add a photo and location above to create your first sample report.</p><a href="#report-form">Create a sample report ↗</a></div>`;
+    reportsEl.innerHTML = reports.length ? `<div class="empty-state"><span aria-hidden="true">⌕</span><h4>No reports match this filter.</h4><p>Try another status to see your ${realMode ? '' : 'sample '}reports.</p></div>` : `<div class="empty-state"><span class="empty-mark">${brandMark}</span><h4>No reports yet.</h4><p>Add a photo and location above to create your first ${realMode ? 'suggested' : 'sample'} report.</p><a href="#report-form">Create a ${realMode ? 'report' : 'sample report'} ↗</a></div>`;
   } else {
-    reportsEl.innerHTML = visible.map((report) => `<article class="report-card${report.id === animateId && !reduceMotion.matches ? ' is-new' : ''}" data-report-id="${escapeHtml(report.id)}"><div class="report-main"><div class="report-meta"><span class="category-pill">${escapeHtml(report.category)}</span><span class="report-date">${new Date(report.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span></div><h4>${escapeHtml(report.title)}</h4><p class="report-location"><span aria-hidden="true">⌖</span> ${escapeHtml(report.location)}</p><div class="report-detail"><span>Description</span><p>${escapeHtml(report.description)}</p></div>${report.notes ? `<div class="report-detail"><span>Your notes</span><p>${escapeHtml(report.notes)}</p></div>` : ''}<div class="report-detail"><span>Recommended action</span><p>${escapeHtml(report.action)}</p></div></div><div class="report-side"><div class="score"><span>Campus Attention Score</span><strong aria-label="${report.score} out of 100"><span class="score-value" aria-hidden="true">${report.id === animateId && !reduceMotion.matches ? 0 : report.score}</span><small aria-hidden="true">/100</small></strong><div class="score-meter" role="meter" aria-label="Campus Attention Score" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${report.score}"><span class="score-meter-fill" style="width: ${report.id === animateId && !reduceMotion.matches ? 0 : report.score}%"></span></div><em>Demo triage aid · not a validated safety assessment</em><details class="score-explainer" data-report-id="${escapeHtml(report.id)}"${openIds.has(report.id) ? ' open' : ''}><summary>How is this score calculated?</summary><div class="score-breakdown">${renderScoreBreakdown(report)}</div></details></div><div class="severity"><span>Severity</span><strong>${escapeHtml(report.severity)}</strong></div><span class="status-badge status-${report.status.toLowerCase().replaceAll(' ', '-')}">${escapeHtml(report.status)}</span><label class="status-control">Status<select data-status-id="${escapeHtml(report.id)}" aria-label="Status for ${escapeHtml(report.title)} at ${escapeHtml(report.location)}">${statuses.map((status) => `<option${report.status === status ? ' selected' : ''}>${status}</option>`).join('')}</select></label>${lastStatusChangeId === report.id ? '<span class="status-confirmation">Updated in this demo</span>' : ''}</div></article>`).join('');
+    reportsEl.innerHTML = visible.map((report) => `<article class="report-card${report.id === animateId && !reduceMotion.matches ? ' is-new' : ''}" data-report-id="${escapeHtml(report.id)}"><div class="report-main"><div class="report-meta"><span class="category-pill">${escapeHtml(report.category)}</span><span class="report-date">${new Date(report.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span></div><h4>${escapeHtml(report.title)}</h4><p class="report-location"><span aria-hidden="true">⌖</span> ${escapeHtml(report.location)}</p><div class="report-detail"><span>Description</span><p>${escapeHtml(report.description)}</p></div>${report.notes ? `<div class="report-detail"><span>Your notes</span><p>${escapeHtml(report.notes)}</p></div>` : ''}<div class="report-detail"><span>Recommended action</span><p>${escapeHtml(report.action)}</p></div></div><div class="report-side"><div class="score"><span>Campus Attention Score</span><strong aria-label="${report.score} out of 100"><span class="score-value" aria-hidden="true">${report.id === animateId && !reduceMotion.matches ? 0 : report.score}</span><small aria-hidden="true">/100</small></strong><div class="score-meter" role="meter" aria-label="Campus Attention Score" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${report.score}"><span class="score-meter-fill" style="width: ${report.id === animateId && !reduceMotion.matches ? 0 : report.score}%"></span></div><em>Demo triage aid · not a validated safety assessment</em><details class="score-explainer" data-report-id="${escapeHtml(report.id)}"${openIds.has(report.id) ? ' open' : ''}><summary>How is this score calculated?</summary><div class="score-breakdown">${renderScoreBreakdown(report)}</div></details></div><div class="severity"><span>Severity</span><strong>${escapeHtml(report.severity)}</strong></div><span class="status-badge status-${report.status.toLowerCase().replaceAll(' ', '-')}">${escapeHtml(report.status)}</span>${realMode ? '' : `<label class="status-control">Status<select data-status-id="${escapeHtml(report.id)}" aria-label="Status for ${escapeHtml(report.title)} at ${escapeHtml(report.location)}">${statuses.map((status) => `<option${report.status === status ? ' selected' : ''}>${status}</option>`).join('')}</select></label>`}${lastStatusChangeId === report.id ? `<span class="status-confirmation">${realMode ? 'Saved' : 'Updated in this demo'}</span>` : ''}</div></article>`).join('');
   }
   if (animateId && !reduceMotion.matches) {
     const card = [...reportsEl.querySelectorAll('.report-card')].find((element) => element.dataset.reportId === animateId);
@@ -224,3 +265,41 @@ function renderReports({ animateId = null, animateList = false } = {}) {
   }
 }
 renderReports();
+async function refreshReports() {
+  if (!realMode || isLoadingReports) return;
+  isLoadingReports = true;
+  refreshButton.disabled = true;
+  loadMoreButton.disabled = true;
+  dashboardFeedback.textContent = 'Loading saved reports…';
+  try {
+    const page = await listReports();
+    reports = mergeReportPage(reports, page.reports, true);
+    nextCursor = page.nextCursor;
+    renderReports();
+    dashboardFeedback.textContent = `Saved reports loaded. ${reports.length} shown${nextCursor ? '; more are available' : ''}.`;
+  } catch (error) {
+    dashboardFeedback.textContent = `Could not load reports: ${error.message}`;
+  } finally {
+    isLoadingReports = false;
+    refreshButton.disabled = false;
+    loadMoreButton.disabled = false;
+  }
+}
+if (realMode) refreshReports();
+refreshButton.addEventListener('click', refreshReports);
+loadMoreButton.addEventListener('click', async () => {
+  if (!nextCursor || loadMoreButton.disabled) return;
+  loadMoreButton.disabled = true;
+  refreshButton.disabled = true;
+  dashboardFeedback.textContent = 'Loading more saved reports…';
+  try {
+    const page = await listReports(nextCursor);
+    const previousCount = reports.length;
+    reports = mergeReportPage(reports, page.reports);
+    nextCursor = page.nextCursor;
+    renderReports({ animateList: true });
+    dashboardFeedback.textContent = `${reports.length - previousCount} more reports loaded${nextCursor ? '; more are available' : ''}.`;
+  } catch (error) {
+    dashboardFeedback.textContent = `Could not load more reports: ${error.message}`;
+  } finally { loadMoreButton.disabled = false; refreshButton.disabled = false; }
+});

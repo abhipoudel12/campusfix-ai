@@ -1,0 +1,201 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CampusFix AI demo API and report store — one bounded image analysis per new submission, with no image persistence.
+Metadata:
+  AWSToolsMetrics:
+    AWSAgentToolkit: aws-cloudformation@3
+  com.aws.cloudformation.Context:
+    ref:
+      - at: docs/milestone-2-backend.md
+        has: resource rationale, cost assumptions, deployment and cleanup
+        scope: stack
+Parameters:
+  AllowedOrigin:
+    Type: String
+    Description: Exact HTTPS frontend origin; localhost HTTP is allowed for local testing.
+    AllowedPattern: 'https://[^/]+|http://localhost(:[0-9]+)?'
+  ArtifactBucket:
+    Type: String
+    Description: Existing deployment artifact bucket; never stores submitted images.
+  ArtifactKey:
+    Type: String
+    Description: Key of the zipped backend package.
+  DailyInferenceLimit:
+    Type: Number
+    Default: 20
+    MinValue: 1
+    MaxValue: 20
+Resources:
+  ReportsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: stores report text and one short-lived processing marker per photo/location fingerprint; no photo bytes
+        must:
+          - Preserve reports on stack deletion unless explicit data cleanup is approved
+          - TTL applies only to processing/quota records; completed reports have no expiresAt
+          - Use DynamoDB default encryption with its AWS owned key; do not add an AWS managed or customer managed KMS key
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: state
+          AttributeType: S
+        - AttributeName: createdAt
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: state-createdAt
+          KeySchema:
+            - AttributeName: state
+              KeyType: HASH
+            - AttributeName: createdAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      Tags:
+        - Key: Project
+          Value: CampusFixAI
+  ApiRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: grants only the table operations and selected Nova Lite inference needed by the handler
+        must:
+          - Do not broaden Bedrock model permission without cost review
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: campusfix-api
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                Resource:
+                  - !GetAtt ReportsTable.Arn
+                  - !Sub '${ReportsTable.Arn}/index/state-createdAt'
+              - Effect: Allow
+                Action: bedrock:InvokeModel
+                Resource: !Sub 'arn:${AWS::Partition}:bedrock:${AWS::Region}::foundation-model/amazon.nova-lite-v1:0'
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt ApiLogGroup.Arn
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 7
+  ApiFunction:
+    Type: AWS::Lambda::Function
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: synchronous, server-side photo analysis; timeout limits request duration, while API stage throttling and the daily counter limit demo traffic
+        must:
+          - Never log request bodies, images, or model responses
+          - No photo bytes in DynamoDB or logs
+          - Do not reserve Lambda concurrency while this account has only 10 total units and must leave 10 unreserved
+    Properties:
+      Runtime: nodejs22.x
+      Handler: handler.handler
+      Code:
+        S3Bucket: !Ref ArtifactBucket
+        S3Key: !Ref ArtifactKey
+      Role: !GetAtt ApiRole.Arn
+      MemorySize: 256
+      Timeout: 25
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref ReportsTable
+          MODEL_ID: amazon.nova-lite-v1:0
+          ALLOWED_ORIGIN: !Ref AllowedOrigin
+          DAILY_INFERENCE_LIMIT: !Ref DailyInferenceLimit
+      LoggingConfig:
+        LogGroup: !Ref ApiLogGroup
+  HttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: lower-cost public HTTP entry point with exact-origin browser CORS
+        must:
+          - CORS is browser policy, not authentication or a spend cap
+    Properties:
+      Name: !Sub '${AWS::StackName}-api'
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowOrigins:
+          - !Ref AllowedOrigin
+        AllowMethods:
+          - GET
+          - POST
+          - OPTIONS
+        AllowHeaders:
+          - content-type
+        MaxAge: 300
+  ApiIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt ApiFunction.Arn
+      PayloadFormatVersion: '2.0'
+  SubmitRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'POST /reports'
+      Target: !Sub 'integrations/${ApiIntegration}'
+  ListRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: 'GET /reports'
+      Target: !Sub 'integrations/${ApiIntegration}'
+  ApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: auto deploy plus low demo request rate; throttling is not a hard billing cap
+        must:
+          - Keep route throttling enabled before exposing the API
+    Properties:
+      ApiId: !Ref HttpApi
+      StageName: '$default'
+      AutoDeploy: true
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 2
+        ThrottlingRateLimit: 1
+  ApiInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ApiFunction
+      Principal: apigateway.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*/reports'
+Outputs:
+  ApiUrl:
+    Value: !GetAtt HttpApi.ApiEndpoint
+  ReportsTableName:
+    Value: !Ref ReportsTable
