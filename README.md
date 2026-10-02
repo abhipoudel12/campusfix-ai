@@ -1,45 +1,51 @@
 # CampusFix AI
 
-CampusFix AI is a campus maintenance reporting demo. A photo and location can become a suggested report with a transparent attention score. The dashboard helps people review issues, but it does not notify a facilities team or replace an inspection.
+![CampusFix AI connected-mode landing page on desktop](docs/screenshots/campusfix-desktop.png)
 
-**Public demo:** https://production.d3gggdwgsp652a.amplifyapp.com/
+CampusFix AI is a public demo for turning a campus maintenance photo and location into a suggested report with a transparent attention score. **[Open the live app](https://production.d3gggdwgsp652a.amplifyapp.com/).**
 
-## What it does
+## The problem and who it serves
 
-- Accepts a JPEG, PNG, or WebP photo, a location, and optional notes.
-- Checks whether the same photo and normalized location already have a report before requesting AI analysis.
-- Uses Amazon Nova Lite to suggest seven report fields for a new issue: title, category, severity, hazard, recurring, description, and action. The backend validates every field and rejects unusable output.
-- Calculates a deterministic Campus Attention Score: Low / Medium / High contributes 25 / 50 / 70 points, hazard adds 15, recurring adds 5, and the result is capped at 100. It is a triage aid, not a safety rating.
-- Displays saved reports with sorting, status filtering, refresh, and paginated loading.
+A maintenance concern is easier to review when its location, visible condition, and suggested next step are recorded together. CampusFix AI lets people who notice an issue create that record and gives reviewers a dashboard for comparing saved reports.
 
-## Workflow
+## Implemented features
+
+- Photo upload and preview for JPEG, PNG, or WebP; location and optional notes; clear submission and error feedback.
+- AI suggestions for title, category, severity, hazard, recurrence, description, and action. The backend checks the model output before saving it.
+- A deterministic Campus Attention Score, an explained score breakdown, status filtering, score sorting, report refresh, and “Load more” pagination.
+- Exact photo/location duplicate reuse before inference. A failed browser submission is shown as an error and is not automatically retried.
+- A separate **Local demo** with sample scenarios and session-only reports; it does not analyze or upload photos.
+
+## Use the live app
+
+1. Open the [connected demo](https://production.d3gggdwgsp652a.amplifyapp.com/) and choose a nonprivate photo of up to 3 MiB.
+2. Enter a location and, if useful, notes. Select **Analyze photo**.
+3. Review the suggested report and score. The dashboard reloads saved reports after refresh; use **Load more reports** when another page is available. Sorting and filtering apply to reports already loaded in the browser.
+
+Saved reports are public demo data, including their locations and notes. Avoid personal information. Anonymous status editing is disabled in connected mode.
+
+## Architecture and request workflow
 
 ```mermaid
 flowchart LR
-  A[Photo + location] --> B[API Gateway]
-  B --> C[Lambda: validate and check duplicate]
-  C -->|Existing report| G[DynamoDB report]
-  C -->|New report| D[Bedrock Nova Lite: one inference attempt]
-  D --> E[Validate analysis + calculate score]
+  A[Photo + location + optional notes] --> B[API Gateway HTTP API]
+  B --> C[Lambda validation + duplicate check]
+  C -->|Existing report| G[DynamoDB]
+  C -->|New accepted report| D[Bedrock Nova Lite analysis]
+  D --> E[Validate output + calculate score]
   E --> G
   G --> H[Dashboard]
 ```
 
-The backend accepts the image bytes inline through API Gateway and Lambda, passes them inline to Bedrock for a new report, and does **not** retain photos. DynamoDB stores report text, score, status, and temporary processing/quota records. The existing S3 bucket stores Lambda deployment code only, not submitted photos.
+**Amplify Hosting** serves the static Vite site. **API Gateway** exposes `POST /reports` and `GET /reports`, applies exact-origin browser CORS, and throttles requests. **Lambda** checks the image and fields, handles duplicate and daily-limit logic, calls **Bedrock Nova Lite** for a new accepted report, validates the seven analysis fields, and calculates the score. **DynamoDB** stores report text, scores, temporary processing markers, and daily inference-attempt counts; `GET /reports` returns up to 50 newest ready reports per page with an opaque cursor. **S3** stores Lambda deployment code only. Submitted photos pass inline through the API and Lambda to Bedrock and are not retained. **IAM** limits the Lambda role, **CloudWatch Logs** hold sanitized diagnostics, and **CloudFormation** manages the backend resources.
 
-Duplicate detection uses SHA-256 over the decoded photo bytes, a NUL separator, and the location after trimming, lowercasing, and collapsing whitespace. A completed report with that fingerprint is returned without incrementing the inference counter or calling Bedrock. A matching submission still being processed receives HTTP 409; a stale processing lease can be reclaimed. Notes are not part of the fingerprint, so changing only notes does not create another report. Different image bytes or a different normalized location can create a new report.
+Duplicate matching hashes the **decoded image bytes**, a NUL separator, and the location after trimming, lowercasing, and collapsing whitespace. A ready report with that SHA-256 fingerprint is returned without another model call or counter increase. An in-progress match returns HTTP 409. Notes do not affect the fingerprint; changing only notes returns the existing report. The check does not compare visual similarity: recompressed or edited image bytes, or a different normalized location, can create a new report. An expired processing lease can be reclaimed after a failed run, so the design does not promise exactly-once billing.
 
-## Connected mode and local demo
+The score starts at **25 / 50 / 70** for Low / Medium / High severity, adds **15** for a hazard and **5** for recurrence, and is capped at 100. With the currently allowed inputs, its possible range is **25–90**. It is a sorting aid, not a safety assessment.
 
-The production build has the deployed API URL in [`.env.production`](.env.production). **Connected demo** sends the photo to the public AWS API, requests AI analysis only for a new fingerprint, and loads persistent reports from DynamoDB. Anyone with the API URL can read reports, so use nonprivate demo data. Anonymous status editing is disabled. Failed submissions show an error; the browser does not retry automatically. If the connection drops, the outcome may be unknown, so check saved reports before submitting again.
+## Local setup and configuration
 
-Run `npm run dev` without a development API URL for **Local demo**. It does not upload or analyze the photo. The selected sample scenario supplies the report facts, and reports exist only in browser memory until refresh. Status editing is available only in this local mode.
-
-One controlled live test on October 2, 2026 returned a report for a damaged sidewalk with `Grounds`, `High`, hazard `true`, recurring `false`, and score **85**. The report was retrieved from the API and checked in DynamoDB. An identical second submission returned that report without another inference attempt; the application counter went **4 → 5 → 5**. This verifies one example, not the reliability of every future model response. See [the progress log](docs/progress.md) for test history and diagnostics.
-
-## Run locally
-
-Use Node.js 22.12+ and npm. From the repository root:
+Use Node.js 22.12+ and npm from the repository root:
 
 ```sh
 npm ci
@@ -48,26 +54,23 @@ npm test
 npm run dev
 ```
 
-Open `http://localhost:5173` for the local demo. `npm run build` creates the connected production site in `dist/`; `npm run preview` previews that build. Browser CORS currently allows the hosted Amplify origin, so a local connected browser build needs a reviewed CORS change before it can call the deployed API.
+`npm run dev` opens the **Local demo** at `http://localhost:5173` when no development `VITE_API_URL` is set. It uses predefined sample facts, keeps reports only in browser memory, and permits status changes only for those local samples. `npm run build` creates a connected production build in `dist/` using the public API URL in [`.env.production`](.env.production); `npm run preview` serves that build locally. The deployed API currently allows the hosted Amplify origin in browser CORS, so local preview cannot load connected reports without a reviewed CORS change. The API URL is public configuration, not a credential.
 
-## AWS deployment and costs
+## Verification
 
-The deployed backend in `us-east-1` uses API Gateway HTTP API, Lambda, Bedrock Nova Lite, DynamoDB with point-in-time recovery, CloudWatch Logs, CloudFormation, IAM, and an S3 bucket for Lambda artifacts. The static frontend is hosted on AWS Amplify at the public URL above. It uses Amplify's default HTTPS address, with no custom domain or Amplify backend. The existing API allows that exact hosted origin. See the [hosting record](docs/amplify-hosting-plan.md) for the deployment steps and cost estimate.
+- **Live backend:** One controlled sidewalk photo produced all seven validated analysis fields, a score of **85** (High 70 + hazard 15), and a report retrieved through the API and checked in DynamoDB. One identical duplicate returned the same report without another inference attempt; the application counter was **4 → 5 → 5**. This verifies one example, not general model reliability.
+- **Mocked and local:** All **23 repository tests** passed, covering model-output validation, scoring, duplicate handling, pagination, and failed submissions without automatic retry. The connected production build passed.
+- **Hosted browser and API:** The public page and assets matched the verified build; CORS preflight and saved-report GET passed. Headless Chrome rendered the connected wording and saved report without a status editor. A 390-pixel mobile viewport had no horizontal overflow. These checks did not submit another photo.
 
-Cost controls include one Bedrock SDK attempt per new submission, a 20-attempt daily application limit, API throttling at one request per second with burst two, duplicate reuse, and image size limits. These controls are not a spending cap. Hosting, API, Lambda, Bedrock, DynamoDB, logs, and artifact storage can incur usage; Free Plan eligibility and remaining credits should be rechecked before future deployments. The API has no user authentication, and reports are public demo data. AI classifications may be wrong; status changes are unavailable in connected mode.
+![Saved synthetic sidewalk report and deterministic score in the hosted dashboard](docs/screenshots/campusfix-report-result.png)
 
-## Evidence and screenshots
+## Limits and cost controls
 
-These are actual screenshots of the hosted connected demo, captured after its saved report loaded. The report-result screenshot shows the verified synthetic sidewalk example.
+The live API has no user authentication. Reports are public, and **facilities teams are not notified or dispatched**. AI classifications can be wrong or fail validation; one successful live example does not establish a success rate. New model calls are limited by a 20-attempt daily application counter, one Bedrock SDK attempt, image-size checks, API throttling, and duplicate reuse. These controls and the existing billing alert are not spending caps. AWS usage and Free Plan eligibility should be checked before future deployments.
 
-![CampusFix AI connected demo on desktop](docs/screenshots/campusfix-desktop.png)
+## Supporting documentation
 
-![CampusFix AI connected demo on a 390-pixel mobile viewport](docs/screenshots/campusfix-mobile.png)
-
-![Saved report result in the hosted dashboard](docs/screenshots/campusfix-report-result.png)
-
-The earlier AWS MCP evidence shows the connected tooling and a read-only identity check.
-
-![AWS MCP connection evidence](docs/screenshots/aws-mcp-connected.png)
-
-![AWS MCP read-only identity check](docs/screenshots/aws-mcp-identity-check.png)
+- [Development milestones and verified evidence](docs/progress.md)
+- [Backend architecture, configuration, deployment, and cleanup](docs/milestone-2-backend.md)
+- [Amplify deployment record and hosting procedure](docs/amplify-hosting-plan.md)
+- [Mobile screenshot](docs/screenshots/campusfix-mobile.png) and AWS MCP evidence: [connection](docs/screenshots/aws-mcp-connected.png), [read-only identity check](docs/screenshots/aws-mcp-identity-check.png)
