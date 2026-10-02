@@ -2,6 +2,8 @@
 
 CampusFix AI is a campus maintenance reporting demo. A photo and location can become a suggested report with a transparent attention score. The dashboard helps people review issues, but it does not notify a facilities team or replace an inspection.
 
+**Public demo:** https://production.d3gggdwgsp652a.amplifyapp.com/
+
 ## What it does
 
 - Accepts a JPEG, PNG, or WebP photo, a location, and optional notes.
@@ -46,20 +48,26 @@ npm test
 npm run dev
 ```
 
-Open `http://localhost:5173` for the local demo. `npm run build` creates the connected production site in `dist/`; `npm run preview` previews that build. The API currently allows the localhost development origin for connected browser testing. After the planned Amplify CORS update, that allowance changes to the exact hosted origin unless CORS is reviewed again.
+Open `http://localhost:5173` for the local demo. `npm run build` creates the connected production site in `dist/`; `npm run preview` previews that build. Browser CORS currently allows the hosted Amplify origin, so a local connected browser build needs a reviewed CORS change before it can call the deployed API.
 
 ## AWS deployment and costs
 
-The deployed backend in `us-east-1` uses API Gateway HTTP API, Lambda, Bedrock Nova Lite, DynamoDB with point-in-time recovery, CloudWatch Logs, CloudFormation, IAM, and an S3 bucket for Lambda artifacts. The public frontend is **not hosted yet**. The proposed simplest path is a manual upload of the static `dist` contents to AWS Amplify Hosting, followed by a reviewed CORS update to the existing backend. No custom domain or Amplify backend is needed. See the [hosting plan](docs/amplify-hosting-plan.md) for exact steps and an estimate.
+The deployed backend in `us-east-1` uses API Gateway HTTP API, Lambda, Bedrock Nova Lite, DynamoDB with point-in-time recovery, CloudWatch Logs, CloudFormation, IAM, and an S3 bucket for Lambda artifacts. The static frontend is hosted on AWS Amplify at the public URL above. It uses Amplify's default HTTPS address, with no custom domain or Amplify backend. The existing API allows that exact hosted origin. See the [hosting record](docs/amplify-hosting-plan.md) for the deployment steps and cost estimate.
 
-Cost controls include one Bedrock SDK attempt per new submission, a 20-attempt daily application limit, API throttling at one request per second with burst two, duplicate reuse, and image size limits. These controls are not a spending cap. Hosting, API, Lambda, Bedrock, DynamoDB, logs, and artifact storage can incur usage; Free Plan eligibility and remaining credits must be checked before hosting. The API has no user authentication, and reports are public demo data. AI classifications may be wrong; status changes are unavailable in connected mode.
+Cost controls include one Bedrock SDK attempt per new submission, a 20-attempt daily application limit, API throttling at one request per second with burst two, duplicate reuse, and image size limits. These controls are not a spending cap. Hosting, API, Lambda, Bedrock, DynamoDB, logs, and artifact storage can incur usage; Free Plan eligibility and remaining credits should be rechecked before future deployments. The API has no user authentication, and reports are public demo data. AI classifications may be wrong; status changes are unavailable in connected mode.
 
 ## Evidence and screenshots
 
-The existing AWS MCP evidence shows the connected tooling and a read-only identity check. It is not a screenshot of the hosted app.
+These are actual screenshots of the hosted connected demo, captured after its saved report loaded. The report-result screenshot shows the verified synthetic sidewalk example.
+
+![CampusFix AI connected demo on desktop](docs/screenshots/campusfix-desktop.png)
+
+![CampusFix AI connected demo on a 390-pixel mobile viewport](docs/screenshots/campusfix-mobile.png)
+
+![Saved report result in the hosted dashboard](docs/screenshots/campusfix-report-result.png)
+
+The earlier AWS MCP evidence shows the connected tooling and a read-only identity check.
 
 ![AWS MCP connection evidence](docs/screenshots/aws-mcp-connected.png)
 
 ![AWS MCP read-only identity check](docs/screenshots/aws-mcp-identity-check.png)
-
-The Amplify public URL and actual desktop, mobile, and report-result screenshots will be added after hosting and browser verification. No hosted screenshots are available yet.

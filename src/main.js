@@ -50,19 +50,23 @@ app.innerHTML = `
 
 if (realMode) {
   document.querySelector('.hero .eyebrow').lastChild.textContent = ' CAMPUS CARE / CONNECTED DEMO';
-  document.querySelector('.hero-description').textContent = 'Add a photo and location for a suggested maintenance report. The backend checks for an existing report before analyzing a new submission. Photos are not stored.';
-  document.querySelector('.hero-note').lastChild.textContent = ' Reports are saved in DynamoDB and available after refresh';
+  document.querySelector('.hero-description').textContent = 'Add a photo and location. A new issue receives AI photo analysis and a saved report; an identical issue returns its existing report. Photos are not retained.';
+  document.querySelector('.hero-note').lastChild.textContent = ' Reports are saved here; facilities teams are not notified.';
   document.querySelector('.art-card-top span:last-child').textContent = 'HOW THIS WORKS';
   document.querySelectorAll('.art-process div span')[1].textContent = 'Check duplicate, then analyze new issue';
-  document.querySelectorAll('.art-process div span')[2].textContent = 'Review the suggested report';
+  document.querySelectorAll('.art-process div span')[2].textContent = 'Review the saved report';
   document.querySelector('.art-card-bottom').innerHTML = '<span>AI PHOTO ANALYSIS</span><span>NO PHOTO STORAGE</span>';
-  document.querySelector('.workspace .section-intro > p').textContent = 'Your photo is processed inline and not retained. New issues receive one AI analysis; duplicate submissions return the saved report. Reports are public demo data, and no facilities team is notified.';
+  document.querySelector('.workspace').setAttribute('aria-label', 'CampusFix connected reporting workspace');
+  document.querySelector('.workspace .section-intro > p').textContent = 'Photos are processed inline for AI analysis and are not retained. Saved reports are public; avoid personal information in locations and notes.';
   document.querySelector('#photo-help').textContent = 'JPEG, PNG, or WebP · up to 3 MB. Processed inline; photo is not stored.';
   document.querySelector('.scenario-box').hidden = true;
   document.querySelector('.submit-label').textContent = 'Analyze photo';
+  document.querySelector('.side-panel').setAttribute('aria-label', 'How connected reporting works');
+  document.querySelectorAll('.side-panel .process-item h4')[1].textContent = 'Analyze a new issue';
   document.querySelectorAll('.side-panel .process-item p')[1].textContent = 'AI suggests report details from the photo and context.';
-  document.querySelectorAll('.side-panel .process-item p')[2].textContent = 'Review suggested facts and score.';
-  document.querySelector('.dashboard-intro > p').textContent = 'Suggested reports persist in DynamoDB and reload here. Anyone with the public API URL can read them; status editing is disabled.';
+  document.querySelectorAll('.side-panel .process-item h4')[2].textContent = 'Review the saved report';
+  document.querySelectorAll('.side-panel .process-item p')[2].textContent = 'Read the suggested facts and score; the report remains available after refresh.';
+  document.querySelector('.dashboard-intro > p').textContent = 'Saved reports reload here after refresh. Status editing is disabled in connected mode.';
   document.querySelector('footer > span:last-child').textContent = 'Connected demo · Campus care starts with a clear report';
 }
 
@@ -158,15 +162,15 @@ form.addEventListener('submit', async (event) => {
   isPreparing = true;
   submitButton.disabled = true;
   submitButton.classList.add('is-preparing');
-  submitButton.querySelector('.submit-label').textContent = realMode ? 'Analyzing photo' : 'Preparing demo report';
-  document.querySelector('#form-message').textContent = realMode ? 'Analyzing photo and preparing a suggested report.' : 'Preparing a demo report from the selected scenario. No photo analysis is taking place.';
+  submitButton.querySelector('.submit-label').textContent = realMode ? 'Checking photo' : 'Preparing demo report';
+  document.querySelector('#form-message').textContent = realMode ? 'Checking for an existing report. New issues receive AI photo analysis.' : 'Preparing a demo report from the selected scenario. No photo analysis is taking place.';
   try {
     if (!realMode) await new Promise((resolve) => window.setTimeout(resolve, reduceMotion.matches ? 0 : 420));
     const result = realMode ? await submitReport(selectedFile, locationInput.value, document.querySelector('#notes').value) : { report };
     reports = [result.report, ...reports.filter((item) => item.id !== result.report.id)];
     renderReports({ animateId: result.report.id });
     document.querySelector('#form-message').textContent = realMode ? (result.duplicate ? 'Existing report returned; no new analysis was run.' : 'Suggested report saved. Review its details before acting.') : 'Sample report added to the dashboard. No photo analysis was performed.';
-    dashboardFeedback.textContent = realMode ? 'Suggested report added. No facilities team was notified.' : 'Sample demo report added. No photo analysis was performed.';
+    dashboardFeedback.textContent = realMode ? 'Saved report shown below.' : 'Sample demo report added. No photo analysis was performed.';
     form.reset(); clearPreview(); setError('photo', ''); setError('location', ''); updateScenarioSummary();
     document.querySelector('#photo-feedback').textContent = '';
     document.querySelector('#dashboard').scrollIntoView({ behavior: reduceMotion.matches ? 'auto' : 'smooth' });
@@ -228,7 +232,7 @@ function renderReports({ animateId = null, animateList = false } = {}) {
   const openIds = new Set([...reportsEl.querySelectorAll('.score-explainer[open]')].map((details) => details.dataset.reportId));
   const counts = Object.fromEntries(statuses.map((status) => [status, reports.filter((report) => report.status === status).length]));
   const statsEl = document.querySelector('#stats');
-  const statsHtml = `<div class="stat"><span>${realMode ? 'Loaded' : 'Total'} reports</span><strong>${reports.length}</strong><small>${realMode ? 'Latest saved reports' : 'Submitted this session'}</small></div><div class="stat"><span>Open</span><strong>${counts.Open}</strong><small>Awaiting attention</small></div><div class="stat"><span>In progress</span><strong>${counts['In progress']}</strong><small>Being addressed</small></div><div class="stat"><span>Resolved</span><strong>${counts.Resolved}</strong><small>Marked complete</small></div>`;
+  const statsHtml = `<div class="stat"><span>${realMode ? 'Loaded' : 'Total'} reports</span><strong>${reports.length}</strong><small>${realMode ? 'Latest saved reports' : 'Submitted this session'}</small></div><div class="stat"><span>Open</span><strong>${counts.Open}</strong><small>${realMode ? 'Saved as Open' : 'Awaiting attention'}</small></div><div class="stat"><span>In progress</span><strong>${counts['In progress']}</strong><small>${realMode ? 'Saved as In progress' : 'Being addressed'}</small></div><div class="stat"><span>Resolved</span><strong>${counts.Resolved}</strong><small>${realMode ? 'Saved as Resolved' : 'Marked complete'}</small></div>`;
   if (statsEl.innerHTML !== statsHtml) statsEl.innerHTML = statsHtml;
   document.querySelector('#report-total').textContent = `(${reports.length}${realMode && nextCursor ? '+' : ''})`;
   loadMoreButton.hidden = !realMode || !nextCursor;
