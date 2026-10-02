@@ -67,7 +67,7 @@ A planning workload is 20 unique photos of about 1 MiB each, around 1,500 input 
 
 ## Destructive cleanup — documentation only
 
-**These commands are destructive and were not executed.** Deleting the Amplify app stops the public site. Deleting the backend stack removes the API and Lambda but **retains the DynamoDB table** under its `Retain` policy. **The `dynamodb delete-table` command permanently deletes stored reports and the table's recovery history.** Emptying the artifact bucket removes deployment packages. Confirm the account, stack outputs, table contents, and data-retention decision before any cleanup.
+**These commands are destructive and were not executed.** Deleting the Amplify app stops the public site. Deleting the backend stack removes the API and Lambda but **retains the DynamoDB table** under its `Retain` policy. **The `dynamodb delete-table` command removes the active report table from the application.** Because point-in-time recovery is enabled, DynamoDB automatically retains a system backup of the table's state immediately before deletion for 35 days; restoring it creates a separate table that would need to be reconnected to the application. [AWS documents this behavior](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/PointInTimeRecovery_Howitworks.html). Emptying the artifact bucket removes deployment packages. Confirm the account, stack outputs, table contents, and data-retention decision before any cleanup.
 
 ```sh
 aws --profile campusfix-ai --region us-east-1 amplify delete-app --app-id d3gggdwgsp652a
@@ -75,7 +75,7 @@ CAMPUSFIX_TABLE=$(aws --profile campusfix-ai --region us-east-1 cloudformation d
 CAMPUSFIX_BUCKET=$(aws --profile campusfix-ai --region us-east-1 cloudformation describe-stacks --stack-name campusfix-artifacts --query 'Stacks[0].Outputs[?OutputKey==`ArtifactBucketName`].OutputValue | [0]' --output text)
 aws --profile campusfix-ai --region us-east-1 cloudformation delete-stack --stack-name campusfix-backend
 aws --profile campusfix-ai --region us-east-1 cloudformation wait stack-delete-complete --stack-name campusfix-backend
-# PERMANENTLY DELETES STORED REPORTS AND RECOVERY HISTORY; omit unless disposal is intended.
+# DELETES THE ACTIVE REPORT TABLE; a PITR system backup remains for 35 days.
 aws --profile campusfix-ai --region us-east-1 dynamodb delete-table --table-name "$CAMPUSFIX_TABLE"
 aws --profile campusfix-ai --region us-east-1 dynamodb wait table-not-exists --table-name "$CAMPUSFIX_TABLE"
 aws --profile campusfix-ai --region us-east-1 s3 rm "s3://$CAMPUSFIX_BUCKET" --recursive
