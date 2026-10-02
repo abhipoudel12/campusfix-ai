@@ -1,38 +1,65 @@
 # CampusFix AI
 
-CampusFix AI is a campus maintenance reporting prototype. It supports a **local frontend demo** and a **connected demo** backed by the deployed AWS API.
+CampusFix AI is a campus maintenance reporting demo. A photo and location can become a suggested report with a transparent attention score. The dashboard helps people review issues, but it does not notify a facilities team or replace an inspection.
+
+## What it does
+
+- Accepts a JPEG, PNG, or WebP photo, a location, and optional notes.
+- Checks whether the same photo and normalized location already have a report before requesting AI analysis.
+- Uses Amazon Nova Lite to suggest seven report fields for a new issue: title, category, severity, hazard, recurring, description, and action. The backend validates every field and rejects unusable output.
+- Calculates a deterministic Campus Attention Score: Low / Medium / High contributes 25 / 50 / 70 points, hazard adds 15, recurring adds 5, and the result is capped at 100. It is a triage aid, not a safety rating.
+- Displays saved reports with sorting, status filtering, refresh, and paginated loading.
+
+## Workflow
+
+```mermaid
+flowchart LR
+  A[Photo + location] --> B[API Gateway]
+  B --> C[Lambda: validate and check duplicate]
+  C -->|Existing report| G[DynamoDB report]
+  C -->|New report| D[Bedrock Nova Lite: one inference attempt]
+  D --> E[Validate analysis + calculate score]
+  E --> G
+  G --> H[Dashboard]
+```
+
+The backend accepts the image bytes inline through API Gateway and Lambda, passes them inline to Bedrock for a new report, and does **not** retain photos. DynamoDB stores report text, score, status, and temporary processing/quota records. The existing S3 bucket stores Lambda deployment code only, not submitted photos.
+
+Duplicate detection uses SHA-256 over the decoded photo bytes, a NUL separator, and the location after trimming, lowercasing, and collapsing whitespace. A completed report with that fingerprint is returned without incrementing the inference counter or calling Bedrock. A matching submission still being processed receives HTTP 409; a stale processing lease can be reclaimed. Notes are not part of the fingerprint, so changing only notes does not create another report. Different image bytes or a different normalized location can create a new report.
+
+## Connected mode and local demo
+
+The production build has the deployed API URL in [`.env.production`](.env.production). **Connected demo** sends the photo to the public AWS API, requests AI analysis only for a new fingerprint, and loads persistent reports from DynamoDB. Anyone with the API URL can read reports, so use nonprivate demo data. Anonymous status editing is disabled. Failed submissions show an error; the browser does not retry automatically. If the connection drops, the outcome may be unknown, so check saved reports before submitting again.
+
+Run `npm run dev` without a development API URL for **Local demo**. It does not upload or analyze the photo. The selected sample scenario supplies the report facts, and reports exist only in browser memory until refresh. Status editing is available only in this local mode.
+
+One controlled live test on October 2, 2026 returned a report for a damaged sidewalk with `Grounds`, `High`, hazard `true`, recurring `false`, and score **85**. The report was retrieved from the API and checked in DynamoDB. An identical second submission returned that report without another inference attempt; the application counter went **4 → 5 → 5**. This verifies one example, not the reliability of every future model response. See [the progress log](docs/progress.md) for test history and diagnostics.
 
 ## Run locally
 
-Requires a current Node.js installation (Node 20.19+ or 22.12+ for Vite 7).
+Use Node.js 22.12+ and npm. From the repository root:
 
 ```sh
-npm install
+npm ci
+npm --prefix backend ci
+npm test
 npm run dev
 ```
 
-Open **http://localhost:5173/**. Run `npm test` for the focused logic tests and `npm run build` for a production build.
+Open `http://localhost:5173` for the local demo. `npm run build` creates the connected production site in `dist/`; `npm run preview` previews that build. The API currently allows the localhost development origin for connected browser testing. After the planned Amplify CORS update, that allowance changes to the exact hosted origin unless CORS is reviewed again.
 
-## What works now
+## AWS deployment and costs
 
-- Responsive form with JPEG, PNG, and WebP upload, preview, replace/remove controls, and an **8 MB** file limit.
-- Required building/location and optional notes.
-- Four clearly identified sample scenarios: broken walkway lighting, overflowing trash, damaged sidewalk, and water leak.
-- Sample reports with title, location, category, severity, description, recommended action, Campus Attention Score, and status.
-- Session-only dashboard with counts, score sorting, status filtering, and Open / In progress / Resolved controls.
+The deployed backend in `us-east-1` uses API Gateway HTTP API, Lambda, Bedrock Nova Lite, DynamoDB with point-in-time recovery, CloudWatch Logs, CloudFormation, IAM, and an S3 bucket for Lambda artifacts. The public frontend is **not hosted yet**. The proposed simplest path is a manual upload of the static `dist` contents to AWS Amplify Hosting, followed by a reviewed CORS update to the existing backend. No custom domain or Amplify backend is needed. See the [hosting plan](docs/amplify-hosting-plan.md) for exact steps and an estimate.
 
-**Demo limitation:** Uploaded photos are previewed locally but are **not analyzed, uploaded, or stored**. Report facts come only from the selected sample scenario. Reports disappear on refresh, and no report is sent to a facilities team.
+Cost controls include one Bedrock SDK attempt per new submission, a 20-attempt daily application limit, API throttling at one request per second with burst two, duplicate reuse, and image size limits. These controls are not a spending cap. Hosting, API, Lambda, Bedrock, DynamoDB, logs, and artifact storage can incur usage; Free Plan eligibility and remaining credits must be checked before hosting. The API has no user authentication, and reports are public demo data. AI classifications may be wrong; status changes are unavailable in connected mode.
 
-### Demo scoring rule
+## Evidence and screenshots
 
-The Campus Attention Score is a simple triage aid, **not a validated safety assessment**. It starts at 25 for Low severity, 50 for Medium, or 70 for High; adds 15 for a hazard and 5 for a recurring issue; and caps at 100. These characteristics are predefined per sample scenario. The score does not use the image or user notes.
+The existing AWS MCP evidence shows the connected tooling and a read-only identity check. It is not a screenshot of the hosted app.
 
-## Connected demo and hosting
+![AWS MCP connection evidence](docs/screenshots/aws-mcp-connected.png)
 
-Set `VITE_API_URL=https://mkebx3gwm5.execute-api.us-east-1.amazonaws.com` when building to use the deployed API. Connected mode sends photos for AI analysis, saves report text, loads and paginates reports, and disables anonymous status editing. The API is deployed but **live AI report creation remains blocked**: four controlled photo attempts have returned HTTP 502, and no report has been saved. The API is public; use only nonprivate demo data. The frontend is not hosted yet. See [docs/amplify-hosting-plan.md](docs/amplify-hosting-plan.md) for the prepared build, hosting cost, and required CORS update.
+![AWS MCP read-only identity check](docs/screenshots/aws-mcp-identity-check.png)
 
-See [docs/progress.md](docs/progress.md) for milestone evidence and remaining work. Existing AWS connection screenshots are in `docs/screenshots/`.
-
-## Hackathon category and lane
-
-Proposed: `#workplace-efficiency` and `#community`. Campus maintenance triage fits workplace workflows; the Social Good category has narrower focus areas.
+The Amplify public URL and actual desktop, mobile, and report-result screenshots will be added after hosting and browser verification. No hosted screenshots are available yet.

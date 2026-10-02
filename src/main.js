@@ -50,19 +50,19 @@ app.innerHTML = `
 
 if (realMode) {
   document.querySelector('.hero .eyebrow').lastChild.textContent = ' CAMPUS CARE / CONNECTED DEMO';
-  document.querySelector('.hero-description').textContent = 'Add a photo and location to generate a suggested maintenance report. The photo is sent to the configured backend for one AI analysis and is not stored.';
-  document.querySelector('.hero-note').lastChild.textContent = ' Reports are saved in the demo backend';
+  document.querySelector('.hero-description').textContent = 'Add a photo and location for a suggested maintenance report. The backend checks for an existing report before analyzing a new submission. Photos are not stored.';
+  document.querySelector('.hero-note').lastChild.textContent = ' Reports are saved in DynamoDB and available after refresh';
   document.querySelector('.art-card-top span:last-child').textContent = 'HOW THIS WORKS';
-  document.querySelectorAll('.art-process div span')[1].textContent = 'Analyze photo once';
+  document.querySelectorAll('.art-process div span')[1].textContent = 'Check duplicate, then analyze new issue';
   document.querySelectorAll('.art-process div span')[2].textContent = 'Review the suggested report';
   document.querySelector('.art-card-bottom').innerHTML = '<span>AI PHOTO ANALYSIS</span><span>NO PHOTO STORAGE</span>';
-  document.querySelector('.workspace .section-intro > p').textContent = 'Your photo is sent for one analysis and then discarded. Reports are public demo data; avoid private details. No facilities team is notified.';
-  document.querySelector('#photo-help').textContent = 'JPEG, PNG, or WebP · up to 3 MB. Sent for one analysis; photo is not stored.';
+  document.querySelector('.workspace .section-intro > p').textContent = 'Your photo is processed inline and not retained. New issues receive one AI analysis; duplicate submissions return the saved report. Reports are public demo data, and no facilities team is notified.';
+  document.querySelector('#photo-help').textContent = 'JPEG, PNG, or WebP · up to 3 MB. Processed inline; photo is not stored.';
   document.querySelector('.scenario-box').hidden = true;
   document.querySelector('.submit-label').textContent = 'Analyze photo';
   document.querySelectorAll('.side-panel .process-item p')[1].textContent = 'AI suggests report details from the photo and context.';
   document.querySelectorAll('.side-panel .process-item p')[2].textContent = 'Review suggested facts and score.';
-  document.querySelector('.dashboard-intro > p').textContent = 'Suggested reports are saved in the public demo backend. Anyone with its API URL can read reports; status editing is disabled.';
+  document.querySelector('.dashboard-intro > p').textContent = 'Suggested reports persist in DynamoDB and reload here. Anyone with the public API URL can read them; status editing is disabled.';
   document.querySelector('footer > span:last-child').textContent = 'Connected demo · Campus care starts with a clear report';
 }
 

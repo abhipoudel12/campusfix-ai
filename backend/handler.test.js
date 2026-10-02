@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { scoreBreakdown, validateAnalysis } from './scoring.js';
+import { analysisFields, categories, scoreBreakdown, severities, textLimits, validateAnalysis } from './scoring.js';
 
 process.env.TABLE_NAME = 'local-test';
 process.env.ALLOWED_ORIGIN = 'http://localhost:5173';
@@ -51,7 +51,14 @@ function mockServices(response = modelResponse()) {
     modelCalls++;
     assert.equal(command.constructor.name, 'ConverseCommand');
     assert.equal(command.input.inferenceConfig.maxTokens, 350);
-    assert.match(command.input.system[0].text, /exactly one complete JSON object/);
+    const instructions = command.input.system[0].text;
+    assert.match(instructions, /exactly one complete JSON object/);
+    assert.match(instructions, /exactly these seven required keys and no others/);
+    for (const key of analysisFields) assert.ok(instructions.includes(`"${key}"`));
+    for (const value of [...categories, ...severities]) assert.ok(instructions.includes(`"${value}"`));
+    for (const limit of Object.values(textLimits)) assert.ok(instructions.includes(`at most ${limit} characters after trimming surrounding whitespace`));
+    assert.match(instructions, /JSON boolean \(true or false, never a string\)/);
+    assert.match(instructions, /nonempty JSON string/);
     assert.equal(command.input.outputConfig, undefined);
     return response;
   } };
@@ -81,6 +88,17 @@ test('plain JSON with surrounding whitespace is accepted', async () => {
   const handler = createHandler(services);
   const first = await handler(event('POST', '/reports', photo));
   assert.equal(first.statusCode, 201);
+  assert.equal(JSON.parse(first.body).report.score, 85);
+  assert.equal(services.modelCalls, 1);
+});
+
+test('mocked model formatting variation trims text and canonicalizes enum casing', async () => {
+  const varied = { ...analysis, title: '  Broken light  ', category: '  lIgHtInG  ', severity: ' hIgH ', description: '\nOne fixture appears dark.\n', action: ' Inspect the fixture. ' };
+  const services = mockServices(modelResponse(varied));
+  const handler = createHandler(services);
+  const first = await handler(event('POST', '/reports', photo));
+  assert.equal(first.statusCode, 201);
+  assert.deepEqual(Object.fromEntries(analysisFields.map((key) => [key, JSON.parse(first.body).report[key]])), analysis);
   assert.equal(JSON.parse(first.body).report.score, 85);
   assert.equal(services.modelCalls, 1);
 });
@@ -237,6 +255,34 @@ test('score and model schema reject invalid classifications', () => {
   assert.deepEqual(scoreBreakdown(analysis), { severity: 70, hazard: 15, recurring: 0, total: 85 });
   assert.throws(() => validateAnalysis({ ...analysis, extra: 'text' }));
   assert.throws(() => scoreBreakdown({ ...analysis, hazard: 'true' }));
+});
+
+test('all seven fields retain exact types, allowed values, and post-trim length limits', () => {
+  for (const category of categories) assert.equal(validateAnalysis({ ...analysis, category: ` ${category.toLowerCase()} ` }).category, category);
+  for (const severity of severities) assert.equal(validateAnalysis({ ...analysis, severity: ` ${severity.toUpperCase()} ` }).severity, severity);
+  for (const field of ['title', 'description', 'action']) {
+    const limit = textLimits[field];
+    assert.equal(validateAnalysis({ ...analysis, [field]: ` ${'x'.repeat(limit)} ` })[field].length, limit);
+    assert.throws(() => validateAnalysis({ ...analysis, [field]: 'x'.repeat(limit + 1) }), { code: `invalid_${field}` });
+    assert.throws(() => validateAnalysis({ ...analysis, [field]: '   ' }), { code: `invalid_${field}` });
+    assert.throws(() => validateAnalysis({ ...analysis, [field]: 1 }), { code: `invalid_${field}` });
+  }
+  for (const field of analysisFields) {
+    const missing = { ...analysis };
+    delete missing[field];
+    assert.throws(() => validateAnalysis(missing), { code: 'missing_fields' });
+  }
+  assert.throws(() => validateAnalysis({ ...analysis, extra: true }), { code: 'extra_fields' });
+  assert.throws(() => validateAnalysis({ ...analysis, category: 'Safety' }), { code: 'invalid_category' });
+  assert.throws(() => validateAnalysis({ ...analysis, category: false }), { code: 'invalid_category' });
+  assert.throws(() => validateAnalysis({ ...analysis, severity: 'Critical' }), { code: 'invalid_severity' });
+  assert.throws(() => validateAnalysis({ ...analysis, severity: 3 }), { code: 'invalid_severity' });
+  for (const field of ['hazard', 'recurring']) {
+    assert.equal(validateAnalysis({ ...analysis, [field]: false })[field], false);
+    assert.equal(validateAnalysis({ ...analysis, [field]: true })[field], true);
+    assert.throws(() => validateAnalysis({ ...analysis, [field]: 'false' }), { code: `invalid_${field}` });
+    assert.throws(() => validateAnalysis({ ...analysis, [field]: null }), { code: `invalid_${field}` });
+  }
 });
 
 test('daily quota rejection removes processing marker before any inference', async () => {

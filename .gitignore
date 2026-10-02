@@ -3,6 +3,7 @@ dist/
 .env
 .env.*
 !.env.example
+!.env.production
 .aws/
 *.zip
 .DS_Store
